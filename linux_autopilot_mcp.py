@@ -22,10 +22,9 @@ from typing import Any, Dict, List, Optional
 
 import psutil
 import yaml
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-
-mcp = FastMCP("linux-autopilot")
+mcp = MCPServer("linux-autopilot")
 
 ACTION_ALLOWLIST_ENV = "PROCESS_MONITOR_ACTION_ALLOWLIST"
 SYSTEM_ACTION_ALLOWLIST_ENV = "PROCESS_MONITOR_SYSTEM_ACTION_ALLOWLIST"
