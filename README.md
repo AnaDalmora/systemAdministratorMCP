@@ -1,19 +1,170 @@
+# Linux Autopilot MCP
 
+Servidor MCP para monitoramento, diagnóstico e manutenção de sistemas Linux. Expõe ferramentas tipadas para agentes de IA e opera tanto na máquina local quanto em máquinas remotas da mesma rede.
 
-Servidor MCP que expõe operações de monitoramento, diagnóstico e manutenção de sistemas Linux como ferramentas tipadas, utilizáveis por agentes de IA. Opera na máquina local e em máquinas remotas da mesma rede.
+## Sumário
 
+- [Visão geral](#visão-geral)
+- [Requisitos](#requisitos)
+- [Instalação](#instalação)
+- [Execução](#execução)
+- [Configuração do cliente MCP](#configuração-do-cliente-mcp)
+- [Segurança e configuração](#segurança-e-configuração)
+- [Catálogo de ferramentas](#catálogo-de-ferramentas)
 
-As ferramentas se dividem em três tipos de operação:
+## Visão geral
 
-- **Monitorar** — leitura de estado, sem efeito colateral
-- **Diagnosticar** — correlação entre métricas e histórico, sem efeito colateral
-- **Agir** — altera o estado do sistema; sujeita a `dry_run`, allowlist e registro de auditoria
+As ferramentas são organizadas em três tipos de operação:
 
----
+- **Monitorar**: leitura do estado do sistema, sem efeito colateral.
+- **Diagnosticar**: correlação entre métricas e histórico, sem efeito colateral.
+- **Agir**: alteração do estado do sistema, sujeita a `dry_run`, allowlist e auditoria.
 
-# Categorias
+O servidor usa transporte MCP via stdio. Métricas, jobs, inventário remoto e auditoria são persistidos por padrão em `~/.local/state/process-monitor-mcp`.
 
-## 1. Processos
+## Requisitos
+
+- Linux
+- Python 3.10 ou superior
+- Node.js e `npx` apenas para uso do MCP Inspector
+- Dependências Python: `mcp`, `psutil` e `PyYAML`
+
+Algumas ferramentas dependem de utilitários opcionais do sistema, como `systemctl`, `journalctl`, `smartctl`, `rsync`, `ssh`, `nmcli`, `powerprofilesctl`, `brightnessctl`, `cpupower`, `docker`, `timeshift`, `restic`, `flatpak`, `snap`, `iw`, `ping` e `resolvectl`. Quando um utilitário não está disponível, somente as ferramentas relacionadas ficam limitadas.
+
+## Instalação
+
+Na raiz do projeto, crie o ambiente virtual e instale as dependências listadas em [requirements.txt](requirements.txt):
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+Não é necessário ativar o ambiente virtual: os comandos usam diretamente o Python da `.venv`.
+
+## Execução
+
+### MCP Inspector
+
+Na raiz do projeto:
+
+```bash
+npx @modelcontextprotocol/inspector .venv/bin/python linux_autopilot_mcp.py
+```
+
+Fora da raiz do projeto, informe caminhos absolutos:
+
+```bash
+npx @modelcontextprotocol/inspector \
+  /caminho/para/o/projeto/.venv/bin/python \
+  /caminho/para/o/projeto/linux_autopilot_mcp.py
+```
+
+### Execução direta
+
+```bash
+.venv/bin/python linux_autopilot_mcp.py
+```
+
+Na execução direta, o processo aguarda comunicação MCP via stdio e não apresenta interface no terminal.
+
+## Configuração do cliente MCP
+
+O Linux Autopilot MCP usa transporte stdio. Configure o cliente para iniciar o Python do ambiente virtual e passe o caminho absoluto de `linux_autopilot_mcp.py`.
+
+Substitua `/caminho/para/o/projeto` pelo caminho absoluto do repositório.
+
+### VS Code
+
+Crie `.vscode/mcp.json` no projeto:
+
+```json
+{
+  "servers": {
+    "linux-autopilot": {
+      "type": "stdio",
+      "command": "/caminho/para/o/projeto/.venv/bin/python",
+      "args": [
+        "/caminho/para/o/projeto/linux_autopilot_mcp.py"
+      ]
+    }
+  }
+}
+```
+
+Depois de salvar o arquivo, inicie o servidor pela visualização de servidores MCP do VS Code ou reinicie a janela para que a configuração seja carregada.
+
+### Clientes com `mcpServers`
+
+Claude Desktop, Cursor e outros clientes compatíveis podem usar uma configuração equivalente:
+
+```json
+{
+  "mcpServers": {
+    "linux-autopilot": {
+      "command": "/caminho/para/o/projeto/.venv/bin/python",
+      "args": [
+        "/caminho/para/o/projeto/linux_autopilot_mcp.py"
+      ]
+    }
+  }
+}
+```
+
+O local do arquivo de configuração varia de acordo com o cliente. Após configurá-lo, reinicie o cliente e confirme que as ferramentas do servidor `linux-autopilot` foram descobertas.
+
+### Variáveis de ambiente no cliente
+
+Para alterar o diretório de estado ou autorizar ações reais, adicione `env` à configuração do servidor:
+
+```json
+{
+  "servers": {
+    "linux-autopilot": {
+      "type": "stdio",
+      "command": "/caminho/para/o/projeto/.venv/bin/python",
+      "args": [
+        "/caminho/para/o/projeto/linux_autopilot_mcp.py"
+      ],
+      "env": {
+        "PROCESS_MONITOR_STATE_DIR": "/caminho/para/o/estado",
+        "PROCESS_MONITOR_ACTION_ALLOWLIST": "nome-do-processo,1234",
+        "PROCESS_MONITOR_SYSTEM_ACTION_ALLOWLIST": "set_power_profile,restart_service"
+      }
+    }
+  }
+}
+```
+
+As allowlists não são necessárias para monitoramento e diagnóstico. Sem elas, as ações permanecem disponíveis para simulação com `dry_run=true`, mas a execução real é recusada.
+
+## Segurança e configuração
+
+Todas as ferramentas que alteram o sistema usam `dry_run=true` por padrão. Para permitir execução real, configure as allowlists antes de iniciar o servidor:
+
+```bash
+export PROCESS_MONITOR_ACTION_ALLOWLIST="nome-do-processo,1234,usuario:nome-do-processo"
+export PROCESS_MONITOR_SYSTEM_ACTION_ALLOWLIST="set_power_profile,restart_service"
+```
+
+Use `*` somente quando todas as ações ou todos os processos puderem ser autorizados. Algumas operações também exigem permissões administrativas, acesso de escrita a cgroups ou configuração prévia do utilitário correspondente.
+
+Variáveis disponíveis:
+
+| Variável | Finalidade |
+|---|---|
+| `PROCESS_MONITOR_ACTION_ALLOWLIST` | Processos autorizados por PID, nome ou `usuario:nome` |
+| `PROCESS_MONITOR_SYSTEM_ACTION_ALLOWLIST` | Ações de sistema autorizadas |
+| `PROCESS_MONITOR_AUDIT_LOG` | Caminho alternativo para o log de auditoria |
+| `PROCESS_MONITOR_STATE_DIR` | Diretório alternativo para estado, métricas e jobs |
+| `PROCESS_MONITOR_JOBS_FILE` | Manifesto de cargas elegíveis para realocação |
+
+Operações remotas exigem autenticação SSH não interativa, hosts cadastrados e `rsync` nos nós envolvidos.
+
+## Catálogo de ferramentas
+
+### 1. Processos
 
 **Monitorar**
 
@@ -45,7 +196,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 2. Memória
+### 2. Memória
 
 **Monitorar**
 
@@ -75,7 +226,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 3. CPU, térmico e energia
+### 3. CPU, térmico e energia
 
 **Monitorar**
 
@@ -109,7 +260,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 4. Disco e I/O
+### 4. Disco e I/O
 
 **Monitorar**
 
@@ -145,7 +296,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 5. Sistema e serviços
+### 5. Sistema e serviços
 
 **Monitorar**
 
@@ -180,7 +331,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 6. Rede
+### 6. Rede
 
 **Monitorar**
 
@@ -213,7 +364,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 7. Pacotes e atualizações
+### 7. Pacotes e atualizações
 
 **Monitorar**
 
@@ -244,7 +395,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 8. Logs e eventos
+### 8. Logs e eventos
 
 **Monitorar**
 
@@ -273,7 +424,7 @@ As ferramentas se dividem em três tipos de operação:
 
 ---
 
-## 9. Diagnóstico combinado
+### 9. Diagnóstico combinado
 
 Ferramentas que atravessam as categorias anteriores.
 
@@ -288,7 +439,7 @@ Ferramentas que atravessam as categorias anteriores.
 
 ---
 
-## 10. Histórico e auditoria
+### 10. Histórico e auditoria
 
 | Tool | Descrição |
 |---|---|
@@ -300,7 +451,7 @@ Ferramentas que atravessam as categorias anteriores.
 
 ---
 
-## 11. Reversão
+### 11. Reversão
 
 | Tool | Descrição |
 |---|---|
@@ -312,7 +463,7 @@ Ferramentas que atravessam as categorias anteriores.
 
 ---
 
-## 12. Máquinas remotas
+### 12. Máquinas remotas
 
 **Monitorar**
 
@@ -345,7 +496,7 @@ Ferramentas que atravessam as categorias anteriores.
 
 ---
 
-## 13. Realocação de carga
+### 13. Realocação de carga
 
 Quando uma máquina satura, uma carga pode ser reexecutada em outro nó com recursos livres.
 
